@@ -55,11 +55,15 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 ## Local tests (same as CI)
 
+Requires an **arm64** host (or arm64 Docker). `third_party/librknnrt.so` is aarch64 and will not link on x86_64.
+
 ```bash
 docker compose -f docker-compose.dev.yml build dev
-docker compose -f docker-compose.dev.yml run --rm -T dev \
+docker compose -f docker-compose.dev.yml run --rm -T --user 0:0 dev \
   sh -c 'cargo clippy --all-targets -- -D warnings && cargo test --lib -- --nocapture'
 ```
+
+CI runs the test job on `ubuntu-24.04-arm` for the same reason.
 
 ## Telegram notifications
 
@@ -80,4 +84,6 @@ Without secrets, notification steps do not fail (`continue-on-error: true`). Suc
 
 ## Self-hosted runner
 
-Not required: prod builds run on `ubuntu-latest` via QEMU + Buildx (`platforms: linux/arm64`).
+Not required:
+- **Tests** — `ubuntu-24.04-arm` (native aarch64, links against `librknnrt.so`)
+- **Prod image** — `ubuntu-latest` + QEMU + Buildx (`platforms: linux/arm64`)
