@@ -49,14 +49,14 @@ jobs:
           cache-from: type=gha,scope=lcm-dreamshaper-dev
           cache-to: type=gha,mode=max,scope=lcm-dreamshaper-dev
 
-      - name: Clippy
+      - name: Prepare workspace for container builds
+        run: rm -rf target
+
+      - name: Clippy and tests in container
         run: |
           set -e
-          docker compose -f docker-compose.dev.yml run --rm -T dev cargo clippy --all-targets -- -D warnings
-
-      - name: Run tests in container
-        run: |
-          docker compose -f docker-compose.dev.yml run --rm dev cargo test -- --nocapture
+          docker compose -f docker-compose.dev.yml run --rm -T dev \
+            sh -c 'cargo clippy --all-targets -- -D warnings && cargo test --lib -- --nocapture'
 
   publish-prerelease:
     name: Publish prerelease image to GHCR

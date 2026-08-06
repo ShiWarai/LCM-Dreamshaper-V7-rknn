@@ -57,8 +57,8 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
 ```bash
 docker compose -f docker-compose.dev.yml build dev
-docker compose -f docker-compose.dev.yml run --rm -T dev cargo clippy --all-targets -- -D warnings
-docker compose -f docker-compose.dev.yml run --rm dev cargo test -- --nocapture
+docker compose -f docker-compose.dev.yml run --rm -T dev \
+  sh -c 'cargo clippy --all-targets -- -D warnings && cargo test --lib -- --nocapture'
 ```
 
 ## Telegram notifications

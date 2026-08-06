@@ -7,7 +7,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: dreamshaper-dev
     user: "${RUNNER_UID:-0}:${RUNNER_GID:-0}"
     volumes:
       - .:/app
