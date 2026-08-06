@@ -21,6 +21,7 @@ services:
       LCM_MODELS_DIR: /models
       PORT: ${PORT:-8765}
       HOST: "0.0.0.0"
+      DREAMSHAPER_API_KEY: ${DREAMSHAPER_API_KEY:-}
     volumes:
       - ${LCM_MODELS_DIR}:/models
     ports:

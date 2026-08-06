@@ -296,9 +296,23 @@ Start the HTTP server:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/health` | Health check (Docker / k8s) |
+| `GET` | `/health` | Health check (Docker / k8s) — no auth |
 | `POST` | `/v1/images/generations` | Generate image(s) — OpenAI Images API compatible |
 | `POST` / `GET` | `/mcp` | Model Context Protocol (MCP) endpoint |
+
+### Authentication
+
+If **`DREAMSHAPER_API_KEY`** is set (or **`OPENAI_API_KEY`** as an alias), protected endpoints require:
+
+```http
+Authorization: Bearer <your_key>
+```
+
+Multiple keys: comma-separated in `DREAMSHAPER_API_KEY` (`key1,key2`).
+
+Protected: `POST /v1/images/generations`, `/mcp`, `/images/*`. `GET /health` stays open (Docker health checks).
+
+If no key is set, the API is open — fine for an isolated Docker network; do not expose to the internet without a key.
 
 ### Request body
 
@@ -332,6 +346,7 @@ Start the HTTP server:
 ```bash
 curl -X POST http://localhost:8765/v1/images/generations \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${DREAMSHAPER_API_KEY}" \
   -d '{"prompt": "a red panda in a bamboo forest, digital art"}' \
   | jq -r '.data[0].b64_json' | base64 -d > output.png
 ```
