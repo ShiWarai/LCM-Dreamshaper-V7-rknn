@@ -2,3 +2,5 @@
 /.venv
 /models
 /lib
+
+*.png
