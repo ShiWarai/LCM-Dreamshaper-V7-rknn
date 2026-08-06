@@ -63,7 +63,7 @@ docker compose -f docker-compose.dev.yml run --rm -T --user 0:0 dev \
   sh -c 'cargo clippy --all-targets -- -D warnings && cargo test --lib -- --nocapture'
 ```
 
-CI runs the test job on `ubuntu-24.04-arm` for the same reason.
+CI runs on GitHub-hosted **`ubuntu-24.04-arm`** (native aarch64).
 
 ## Telegram notifications
 
@@ -82,8 +82,16 @@ Without secrets, notification steps do not fail (`continue-on-error: true`). Suc
 - `third_party/librknnrt.so` must be in git (for prod builds in CI).
 - RKNN models are **not** in the image — mounted via volume `LCM_MODELS_DIR:/models`.
 
-## Self-hosted runner
+## Runners
 
-Not required:
-- **Tests** — `ubuntu-24.04-arm` (native aarch64, links against `librknnrt.so`)
-- **Prod image** — `ubuntu-latest` + QEMU + Buildx (`platforms: linux/arm64`)
+All compile/build jobs use GitHub-hosted **`ubuntu-24.04-arm`** (native aarch64, no QEMU):
+
+| Job | Workflow |
+|-----|----------|
+| Tests + dev image | `deploy.yml` → `test` |
+| `:prerelease` image | `deploy.yml` → `publish-prerelease` |
+| `:main` image | `publish.yml` → `publish` |
+
+Telegram notify jobs stay on `ubuntu-latest` (no Docker build).
+
+Self-hosted runners are not required.
