@@ -6,9 +6,9 @@ Workflows live in [`.github/workflows/`](../.github/workflows/). Prod images are
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| **Deploy** (`deploy.yml`) | Push to `main` / `dev`, manual run | clippy + cargo test in dev image |
+| **Deploy** (`deploy.yml`) | Push to `master` / `dev`, manual run | clippy + cargo test in dev image |
 | **Deploy → prerelease** | Push to `dev` with `[prerelease]` in commit message, or manual `publish_prerelease` flag | Publish `:prerelease` to GHCR |
-| **Publish** (`publish.yml`) | Successful Deploy on `main` | Publish `:main` to GHCR |
+| **Publish** (`publish.yml`) | Successful Deploy on `master` | Publish `:master` to GHCR |
 
 ## GHCR image
 
@@ -16,7 +16,7 @@ Workflows live in [`.github/workflows/`](../.github/workflows/). Prod images are
 ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn
 ```
 
-Tags: `:main`, `:prerelease`, `:<sha>`.
+Tags: `:master`, `:prerelease`, `:<sha>`.
 
 ## Prod vs prerelease vs local build
 
@@ -24,7 +24,7 @@ Tags: `:main`, `:prerelease`, `:<sha>`.
 |--------|---------|-------|
 | **Local build** | `docker compose up -d --build` | `dreamshaper-api:latest` |
 | **Prerelease** | `-f docker-compose.yml -f docker-compose.prerelease.yml` | `:prerelease` |
-| **Prod** | `-f docker-compose.yml -f docker-compose.prod.yml` | `:main` |
+| **Prod** | `-f docker-compose.yml -f docker-compose.prod.yml` | `:master` |
 
 ### `:prerelease` — test candidate
 
@@ -40,17 +40,17 @@ docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:prerelease
 docker compose -f docker-compose.yml -f docker-compose.prerelease.yml up -d
 ```
 
-### `:main` — production
+### `:master` — production
 
 ```bash
-docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:main
+docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:master
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 ## Build cache
 
 - **prerelease** — GHA cache scope `lcm-dreamshaper-v7-rknn-prerelease`
-- **main** — scope `lcm-dreamshaper-v7-rknn-main`
+- **master** — scope `lcm-dreamshaper-v7-rknn-master`
 - **test** (dev image) — scope `lcm-dreamshaper-v7-rknn-dev`
 
 ## Local tests (same as CI)
@@ -90,7 +90,7 @@ All compile/build jobs use GitHub-hosted **`ubuntu-24.04-arm`** (native aarch64,
 |-----|----------|
 | Tests + dev image | `deploy.yml` → `test` |
 | `:prerelease` image | `deploy.yml` → `publish-prerelease` |
-| `:main` image | `publish.yml` → `publish` |
+| `:master` image | `publish.yml` → `publish` |
 
 Telegram notify jobs stay on `ubuntu-latest` (no Docker build).
 

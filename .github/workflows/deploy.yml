@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [main, dev]
+    branches: [master, dev]
   workflow_dispatch:
     inputs:
       publish_prerelease:
