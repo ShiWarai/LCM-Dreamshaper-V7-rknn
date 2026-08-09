@@ -1,6 +1,6 @@
 <div align="center">
 
-# LCM-Dreamshaper-V7-rs
+# LCM-Dreamshaper-V7-rknn
 
 > Note: The tool automatically attempts to download a recompiled UNet RKNN from the HF repository `kautism/LCM_Dreamshaper_v7-RKNN-2.3.2` if present. If not found, it falls back to the original `whaoyang/LCM-Dreamshaper-V7-ONNX-rk3588-512x512-2.3.0` RKNN. All model downloads are handled by the hf-hub library (no manual caching required).
 
@@ -116,8 +116,8 @@ cp /tmp/unet_rk3588_v232.rknn ~/.cache/lcm-rs/unet_v232.rknn
 Clone the repository and install the binary into `~/.cargo/bin` with:
 
 ```bash
-git clone https://github.com/ShiWarai/LCM-Dreamshaper-V7-rs.git
-cd LCM-Dreamshaper-V7-rs
+git clone https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn.git
+cd LCM-Dreamshaper-V7-rknn
 cargo install --path .
 ```
 
@@ -154,14 +154,14 @@ curl -fsS http://localhost:8765/health
 **Prod from GHCR:**
 
 ```bash
-docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rs:main
+docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:main
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 **Prerelease (`dev` branch, commit with `[prerelease]`):**
 
 ```bash
-docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rs:prerelease
+docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:prerelease
 docker compose -f docker-compose.yml -f docker-compose.prerelease.yml up -d
 ```
 
@@ -396,7 +396,7 @@ Measured on RK3588 (Orange Pi 5 Plus), all 3 NPU cores:
 ## Project Structure
 
 ```
-LCM-Dreamshaper-V7-rs/
+LCM-Dreamshaper-V7-rknn/
 ├── .github/workflows/     # CI: test, GHCR publish, Telegram
 ├── Dockerfile             # Prod image (linux/arm64)
 ├── Dockerfile.dev         # Dev image (clippy + tests)
@@ -437,16 +437,16 @@ If this saves you time or helps your project, consider supporting continued deve
 
 <!-- Link Definitions -->
 
-[github-stars-shield]: https://img.shields.io/github/stars/ShiWarai/LCM-Dreamshaper-V7-rs?labelColor=black&style=flat-square&color=ffcb47
-[github-stars-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rs
-[github-issues-shield]: https://img.shields.io/github/issues/ShiWarai/LCM-Dreamshaper-V7-rs?labelColor=black&style=flat-square&color=ff80eb
-[github-issues-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rs/issues
-[github-contributors-shield]: https://img.shields.io/github/contributors/ShiWarai/LCM-Dreamshaper-V7-rs?color=c4f042&labelColor=black&style=flat-square
-[github-contributors-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rs/graphs/contributors
-[last-commit-shield]: https://img.shields.io/github/last-commit/ShiWarai/LCM-Dreamshaper-V7-rs?color=c4f042&labelColor=black&style=flat-square
-[last-commit-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rs/commits/main
+[github-stars-shield]: https://img.shields.io/github/stars/ShiWarai/LCM-Dreamshaper-V7-rknn?labelColor=black&style=flat-square&color=ffcb47
+[github-stars-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn
+[github-issues-shield]: https://img.shields.io/github/issues/ShiWarai/LCM-Dreamshaper-V7-rknn?labelColor=black&style=flat-square&color=ff80eb
+[github-issues-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/issues
+[github-contributors-shield]: https://img.shields.io/github/contributors/ShiWarai/LCM-Dreamshaper-V7-rknn?color=c4f042&labelColor=black&style=flat-square
+[github-contributors-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/graphs/contributors
+[last-commit-shield]: https://img.shields.io/github/last-commit/ShiWarai/LCM-Dreamshaper-V7-rknn?color=c4f042&labelColor=black&style=flat-square
+[last-commit-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/commits/main
 [license-shield]: https://img.shields.io/badge/license-MIT-white?labelColor=black&style=flat-square
-[license-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rs/blob/main/LICENSE
+[license-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/blob/main/LICENSE
 [ko-fi-shield]: https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white
 [ko-fi-link]: https://ko-fi.com/kautism
 [paypal-shield]: https://img.shields.io/badge/PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white

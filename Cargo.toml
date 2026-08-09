@@ -1,5 +1,5 @@
 [package]
-name = "lcm-dreamshaper-v7-rs"
+name = "lcm-dreamshaper-v7-rknn"
 version = "0.1.0"
 edition = "2024"
 
@@ -28,7 +28,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 opt-level = 3
 
 [lib]
-name = "lcm_dreamshaper_v7_rs"
+name = "lcm_dreamshaper_v7_rknn"
 path = "src/lib.rs"
 
 [[bin]]

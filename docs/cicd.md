@@ -13,7 +13,7 @@ Workflows live in [`.github/workflows/`](../.github/workflows/). Prod images are
 ## GHCR image
 
 ```
-ghcr.io/shiwarai/lcm-dreamshaper-v7-rs
+ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn
 ```
 
 Tags: `:main`, `:prerelease`, `:<sha>`.
@@ -36,22 +36,22 @@ git push origin dev
 On the staging host:
 
 ```bash
-docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rs:prerelease
+docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:prerelease
 docker compose -f docker-compose.yml -f docker-compose.prerelease.yml up -d
 ```
 
 ### `:main` — production
 
 ```bash
-docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rs:main
+docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:main
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 ## Build cache
 
-- **prerelease** — GHA cache scope `lcm-dreamshaper-prerelease`
-- **main** — scope `lcm-dreamshaper-main`
-- **test** (dev image) — scope `lcm-dreamshaper-dev`
+- **prerelease** — GHA cache scope `lcm-dreamshaper-v7-rknn-prerelease`
+- **main** — scope `lcm-dreamshaper-v7-rknn-main`
+- **test** (dev image) — scope `lcm-dreamshaper-v7-rknn-dev`
 
 ## Local tests (same as CI)
 

@@ -1450,7 +1450,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lcm-dreamshaper-v7-rs"
+name = "lcm-dreamshaper-v7-rknn"
 version = "0.1.0"
 dependencies = [
  "anyhow",

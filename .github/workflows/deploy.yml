@@ -17,7 +17,7 @@ permissions:
   actions: write
 
 env:
-  IMAGE_NAME: ghcr.io/shiwarai/lcm-dreamshaper-v7-rs
+  IMAGE_NAME: ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn
 
 jobs:
   test:
@@ -43,8 +43,8 @@ jobs:
           tags: dreamshaper-dev:latest
           load: true
           push: false
-          cache-from: type=gha,scope=lcm-dreamshaper-dev
-          cache-to: type=gha,mode=max,scope=lcm-dreamshaper-dev
+          cache-from: type=gha,scope=lcm-dreamshaper-v7-rknn-dev
+          cache-to: type=gha,mode=max,scope=lcm-dreamshaper-v7-rknn-dev
 
       - name: Clippy and tests in container
         run: |
@@ -87,8 +87,8 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
           push: true
           provenance: false
-          cache-from: type=gha,scope=lcm-dreamshaper-prerelease
-          cache-to: type=gha,mode=max,scope=lcm-dreamshaper-prerelease
+          cache-from: type=gha,scope=lcm-dreamshaper-v7-rknn-prerelease
+          cache-to: type=gha,mode=max,scope=lcm-dreamshaper-v7-rknn-prerelease
 
   notify-telegram:
     name: Notify Telegram
@@ -138,7 +138,7 @@ jobs:
             Repository: `${{ github.repository }}`
             Branch: `${{ github.ref_name }}`
             Tags: `:prerelease` and `:${{ github.sha }}`
-            Image: `ghcr.io/shiwarai/lcm-dreamshaper-v7-rs:prerelease`
+            Image: `ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:prerelease`
             [Open run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
       - name: Tests OK (no prerelease)

@@ -11,7 +11,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE_NAME: ghcr.io/shiwarai/lcm-dreamshaper-v7-rs
+  IMAGE_NAME: ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn
 
 jobs:
   publish:
@@ -45,8 +45,8 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.event.workflow_run.head_sha }}
           push: true
           provenance: false
-          cache-from: type=gha,scope=lcm-dreamshaper-main
-          cache-to: type=gha,mode=max,scope=lcm-dreamshaper-main
+          cache-from: type=gha,scope=lcm-dreamshaper-v7-rknn-main
+          cache-to: type=gha,mode=max,scope=lcm-dreamshaper-v7-rknn-main
 
   notify-telegram-on-publish:
     name: Notify Telegram on image published
@@ -66,5 +66,5 @@ jobs:
             *Image published to GHCR*
             Repository: `${{ github.repository }}`
             Branch: `${{ github.event.workflow_run.head_branch }}`
-            Image: `ghcr.io/shiwarai/lcm-dreamshaper-v7-rs:main`
+            Image: `ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:main`
             [Open run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

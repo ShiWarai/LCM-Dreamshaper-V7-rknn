@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use lcm_dreamshaper_v7_rs::pipeline::{GenerateRequest, Pipeline};
-use lcm_dreamshaper_v7_rs::serve;
+use lcm_dreamshaper_v7_rknn::pipeline::{GenerateRequest, Pipeline};
+use lcm_dreamshaper_v7_rknn::serve;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLI
