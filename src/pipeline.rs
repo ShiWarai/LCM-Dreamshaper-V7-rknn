@@ -47,6 +47,20 @@ pub struct GenerateResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Local models directory (env LCM_MODELS_DIR or ./models when cwd is project root)
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn local_models_dir() -> Option<std::path::PathBuf> {
+    if let Ok(dir) = std::env::var("LCM_MODELS_DIR") {
+        let p = std::path::PathBuf::from(dir);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    std::env::current_dir().ok().map(|cwd| cwd.join("models")).filter(|p| p.is_dir())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Model download helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -56,63 +70,93 @@ pub fn download_models() -> Result<(
     std::path::PathBuf, // vae_decoder
     std::path::PathBuf, // tokenizer
 )> {
-    eprintln!("📥 Downloading models from HuggingFace (cached after first run)...");
+    let local_dir = local_models_dir();
     let api = Api::new().context("Failed to create HF Hub API")?;
     let lcm_repo = api.model("whaoyang/LCM-Dreamshaper-V7-ONNX-rk3588-512x512-2.3.0".to_string());
 
-    let text_encoder = lcm_repo
-        .get("text_encoder/model.rknn")
-        .context("Failed to download text_encoder/model.rknn")?;
-    eprintln!("  text_encoder: {}", text_encoder.display());
+    let (text_encoder, vae_decoder) = if let Some(base) = local_dir.as_ref() {
+        let whaoyang = base.join("LCM-Dreamshaper-V7-ONNX-rk3588-512x512-2.3.0");
+        let te = whaoyang.join("text_encoder").join("model.rknn");
+        let vae = whaoyang.join("vae_decoder").join("model.rknn");
+        if te.is_file() && vae.is_file() {
+            eprintln!("📂 Using local models from {}", base.display());
+            eprintln!("  text_encoder: {}", te.display());
+            eprintln!("  vae_decoder: {}", vae.display());
+            (te, vae)
+        } else {
+            eprintln!("📥 Downloading text_encoder & vae_decoder from HuggingFace...");
+            let te = lcm_repo.get("text_encoder/model.rknn").context("Failed to download text_encoder/model.rknn")?;
+            let vae = lcm_repo.get("vae_decoder/model.rknn").context("Failed to download vae_decoder/model.rknn")?;
+            eprintln!("  text_encoder: {}", te.display());
+            eprintln!("  vae_decoder: {}", vae.display());
+            (te, vae)
+        }
+    } else {
+        eprintln!("📥 Downloading models from HuggingFace (cached after first run)...");
+        let te = lcm_repo.get("text_encoder/model.rknn").context("Failed to download text_encoder/model.rknn")?;
+        let vae = lcm_repo.get("vae_decoder/model.rknn").context("Failed to download vae_decoder/model.rknn")?;
+        eprintln!("  text_encoder: {}", te.display());
+        eprintln!("  vae_decoder: {}", vae.display());
+        (te, vae)
+    };
 
-    let unet = unet_model_path()?;
+    let unet = unet_model_path(&local_dir)?;
     eprintln!("  unet: {}", unet.display());
 
-    let vae_decoder = lcm_repo
-        .get("vae_decoder/model.rknn")
-        .context("Failed to download vae_decoder/model.rknn")?;
-    eprintln!("  vae_decoder: {}", vae_decoder.display());
-
-    let tokenizer = download_clip_tokenizer()?;
+    let tokenizer = tokenizer_path(&local_dir)
+        .unwrap_or_else(|| download_clip_tokenizer().expect("Failed to download tokenizer"));
     eprintln!("  tokenizer: {}", tokenizer.display());
 
     Ok((text_encoder, unet, vae_decoder, tokenizer))
 }
 
 /// Return path to the UNet RKNN model compatible with librknnrt.so 2.3.2.
-/// Prefers locally recompiled model over the HF-hosted 2.3.0-compiled model.
-fn unet_model_path() -> Result<std::path::PathBuf> {
-    // 1. Prefer locally recompiled UNet compiled with rknn-toolkit2 2.3.2.
-    //    Run `README.md § "Building the UNet"` to produce this file.
-    let local_path = dirs::cache_dir()
+/// Prefers: local models dir (kautism 2.3.2) → ~/.cache/lcm-rs → HF kautism → HF whaoyang fallback.
+fn unet_model_path(local_dir: &Option<std::path::PathBuf>) -> Result<std::path::PathBuf> {
+    // 1. Local project models: LCM_Dreamshaper_v7-RKNN-2.3.2 (UNet for 2.3.2)
+    if let Some(base) = local_dir {
+        let kautism = base.join("LCM_Dreamshaper_v7-RKNN-2.3.2").join("unet_v232.rknn");
+        if kautism.is_file() {
+            eprintln!("  (using local UNet 2.3.2: {})", kautism.display());
+            return Ok(kautism);
+        }
+    }
+
+    // 2. Cache: locally recompiled UNet (README § "Building the UNet").
+    let cache_path = dirs::cache_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
         .join("lcm-rs")
         .join("unet_v232.rknn");
-    if local_path.exists() {
-        eprintln!("  (using locally compiled UNet for librknnrt 2.3.2: {})", local_path.display());
-        return Ok(local_path);
+    if cache_path.exists() {
+        eprintln!("  (using cached UNet 2.3.2: {})", cache_path.display());
+        return Ok(cache_path);
     }
 
     let api = Api::new().context("Failed to create HF Hub API")?;
 
-    // 2. Try kautism HF repo (2.3.2-compiled upload).
+    // 3. HF: kautism/LCM_Dreamshaper_v7-RKNN-2.3.2
     let user_repo = api.model("kautism/LCM_Dreamshaper_v7-RKNN-2.3.2".to_string());
-    match user_repo.get("unet_v232.rknn") {
-        Ok(path) => {
-            eprintln!("  (using UNet from HF: kautism/LCM_Dreamshaper_v7-RKNN-2.3.2/unet_v232.rknn)");
-            return Ok(path);
-        }
-        Err(_) => {}
+    if let Ok(path) = user_repo.get("unet_v232.rknn") {
+        eprintln!("  (using UNet from HF: kautism/LCM_Dreamshaper_v7-RKNN-2.3.2/unet_v232.rknn)");
+        return Ok(path);
     }
 
-    // 3. Last resort: original 2.3.0-compiled model.
-    //    WARNING: will SIGSEGV on librknnrt.so 2.3.2.
-    //    Recompile the UNet — see README § "Building the UNet".
-    eprintln!("  ⚠️  WARNING: no 2.3.2-compiled UNet found.");
-    eprintln!("  ⚠️  Falling back to 2.3.0 model — expect SIGSEGV on librknnrt.so 2.3.2.");
-    eprintln!("  ⚠️  See README § 'Building the UNet for librknnrt 2.3.2'.");
+    // 4. Fallback: whaoyang 2.3.0 model (may SIGSEGV on librknnrt 2.3.2).
+    eprintln!("  ⚠️  No 2.3.2 UNet found; falling back to 2.3.0 model (may crash on librknnrt 2.3.2).");
     let lcm_repo = api.model("whaoyang/LCM-Dreamshaper-V7-ONNX-rk3588-512x512-2.3.0".to_string());
     lcm_repo.get("unet/model.rknn").context("Failed to download unet/model.rknn from fallback repo")
+}
+
+/// Tokenizer: from local whaoyang repo if present, else download CLIP.
+fn tokenizer_path(local_dir: &Option<std::path::PathBuf>) -> Option<std::path::PathBuf> {
+    let base = local_dir.as_ref()?;
+    let whaoyang = base.join("LCM-Dreamshaper-V7-ONNX-rk3588-512x512-2.3.0");
+    let tok = whaoyang.join("tokenizer").join("tokenizer.json");
+    if tok.is_file() {
+        Some(tok)
+    } else {
+        None
+    }
 }
 
 /// Download CLIP tokenizer.json and cache it under ~/.cache/lcm-rs/.
@@ -141,13 +185,13 @@ fn download_clip_tokenizer() -> Result<std::path::PathBuf> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pipeline — holds all loaded models
+// Pipeline — model paths + tokenizer (RKNN contexts loaded one at a time)
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub struct Pipeline {
-    text_encoder: RknnModel,
-    unet: UNetModel,
-    vae_decoder: RknnModel,
+    text_encoder_path: std::path::PathBuf,
+    unet_path: std::path::PathBuf,
+    vae_decoder_path: std::path::PathBuf,
     tokenizer: Tokenizer,
 }
 
@@ -160,25 +204,29 @@ impl Pipeline {
     pub fn load() -> Result<Self> {
         let (te_path, unet_path, vae_path, tok_path) = download_models()?;
 
-        eprintln!("🔧 Loading RKNN models...");
-        let text_encoder = RknnModel::load(&te_path).context("Load text_encoder")?;
-        let unet = UNetModel::load(&unet_path).context("Load unet")?;
-        let vae_decoder = RknnModel::load(&vae_path).context("Load vae_decoder")?;
-        eprintln!("  All models loaded");
+        eprintln!("🔧 Models ready (RK3588 NPU: loading one RKNN context at a time)");
 
         let tokenizer = Tokenizer::from_file(&tok_path)
             .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
 
-        Ok(Self { text_encoder, unet, vae_decoder, tokenizer })
+        Ok(Self {
+            text_encoder_path: te_path,
+            unet_path,
+            vae_decoder_path: vae_path,
+            tokenizer,
+        })
     }
 
     pub fn print_info(&self) -> Result<()> {
         eprintln!("\n── text_encoder ──");
-        self.text_encoder.print_info()?;
+        let te = RknnModel::load(&self.text_encoder_path).context("Load text_encoder")?;
+        te.print_info()?;
         eprintln!("\n── unet ──");
-        self.unet.print_info()?;
+        let unet = UNetModel::load(&self.unet_path).context("Load unet")?;
+        unet.print_info()?;
         eprintln!("\n── vae_decoder ──");
-        self.vae_decoder.print_info()?;
+        let vae = RknnModel::load(&self.vae_decoder_path).context("Load vae_decoder")?;
+        vae.print_info()?;
         Ok(())
     }
 
@@ -188,11 +236,15 @@ impl Pipeline {
         let n_tokens = input_ids.iter().position(|&x| x == 49407).unwrap_or(MAX_SEQ_LEN);
         eprintln!("🔤 Prompt: \"{}\" ({} tokens)", req.prompt, n_tokens.saturating_sub(1));
 
-        // Text encoding
-        eprintln!("📝 Running text encoder...");
-        let text_emb = self.text_encoder
-            .run_with_int32_inputs(&[(0, &input_ids)], &[])
-            .context("Text encoder failed")?;
+        // Text encoding (unload before UNet — RK3588 NPU SRAM fits one large model)
+        eprintln!("📝 Loading text encoder...");
+        let text_emb = {
+            let text_encoder =
+                RknnModel::load(&self.text_encoder_path).context("Load text_encoder")?;
+            text_encoder
+                .run_with_int32_inputs(&[(0, &input_ids)], &[])
+                .context("Text encoder failed")?
+        };
         let expected_emb = MAX_SEQ_LEN * TEXT_EMB_DIM;
         eprintln!("  text encoder output: {} f32 elements (expected {})", text_emb.len(), expected_emb);
         if text_emb.len() < expected_emb {
@@ -219,32 +271,34 @@ impl Pipeline {
         let ts_cond = guidance_scale_embedding(req.guidance_scale, GUIDANCE_EMB_DIM);
 
         // Denoise loop
-        eprintln!("🎨 Denoising ({} steps)...", req.steps);
+        eprintln!("🎨 Loading UNet, denoising ({} steps)...", req.steps);
         let timesteps = scheduler.timesteps.clone();
-        for (step_idx, &timestep) in timesteps.iter().enumerate() {
-            eprint!("  step {}/{} (t={}) ...", step_idx + 1, req.steps, timestep);
-            let latent_nhwc = nchw_to_nhwc(&latent_nchw, LATENT_C, LATENT_H, LATENT_W);
-            eprintln!(
-                " [sample={} ts_cond={}]",
-                latent_nhwc.len(), ts_cond.len()
-            );
-            eprint!("  step {}/{} (t={}) running UNet ...", step_idx + 1, req.steps, timestep);
-            let noise_pred = self.unet
-                .run(&latent_nhwc, timestep as i64, &text_emb_flat, &ts_cond)
-                .with_context(|| format!("UNet step {step_idx} failed"))?;
-            let (prev_latent, _denoised) =
-                scheduler.step(&noise_pred, timestep, &latent_nchw, step_idx, &mut rng);
-            latent_nchw = prev_latent;
-            eprintln!(" done");
+        {
+            let unet = UNetModel::load(&self.unet_path).context("Load unet")?;
+            for (step_idx, &timestep) in timesteps.iter().enumerate() {
+                let latent_nhwc = nchw_to_nhwc(&latent_nchw, LATENT_C, LATENT_H, LATENT_W);
+                eprint!("  step {}/{} (t={}) running UNet ...", step_idx + 1, req.steps, timestep);
+                let noise_pred = unet
+                    .run(&latent_nhwc, timestep as i64, &text_emb_flat, &ts_cond)
+                    .with_context(|| format!("UNet step {step_idx} failed"))?;
+                let (prev_latent, _denoised) =
+                    scheduler.step(&noise_pred, timestep, &latent_nchw, step_idx, &mut rng);
+                latent_nchw = prev_latent;
+                eprintln!(" done");
+            }
         }
 
         // VAE decode
-        eprintln!("🖼️  Decoding with VAE...");
+        eprintln!("🖼️  Loading VAE decoder...");
         let scaled_nchw: Vec<f32> = latent_nchw.iter().map(|&v| v / VAE_SCALE).collect();
         let scaled_nhwc = nchw_to_nhwc(&scaled_nchw, LATENT_C, LATENT_H, LATENT_W);
-        let pixels = self.vae_decoder
-            .run_f32(&[(0, &scaled_nhwc)])
-            .context("VAE decoder failed")?;
+        let pixels = {
+            let vae_decoder =
+                RknnModel::load(&self.vae_decoder_path).context("Load vae_decoder")?;
+            vae_decoder
+                .run_f32(&[(0, &scaled_nhwc)])
+                .context("VAE decoder failed")?
+        };
 
         // Encode to PNG
         let img = vae_output_to_image(&pixels, IMG_H, IMG_W);
@@ -321,4 +375,33 @@ pub fn vae_output_to_image(data: &[f32], h: usize, w: usize) -> ImageBuffer<Rgb<
         }
     }
     img
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nchw_to_nhwc_layout() {
+        // C=2, H=2, W=2 — NCHW [c,h,w] → NHWC [h,w,c]
+        let nchw = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let nhwc = nchw_to_nhwc(&nchw, 2, 2, 2);
+        assert_eq!(nhwc, vec![1.0, 5.0, 2.0, 6.0, 3.0, 7.0, 4.0, 8.0]);
+    }
+
+    #[test]
+    fn guidance_embedding_dim() {
+        let emb = guidance_scale_embedding(7.5, 256);
+        assert_eq!(emb.len(), 256);
+    }
+
+    #[test]
+    fn vae_output_to_image_dimensions() {
+        let h = 4;
+        let w = 4;
+        let data = vec![0.0f32; 3 * h * w];
+        let img = vae_output_to_image(&data, h, w);
+        assert_eq!(img.width(), w as u32);
+        assert_eq!(img.height(), h as u32);
+    }
 }

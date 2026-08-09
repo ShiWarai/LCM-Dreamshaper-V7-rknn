@@ -3,7 +3,6 @@
 /// Implements the LCMScheduler compatible with diffusers LCMScheduler config:
 ///   beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear"
 ///   num_train_timesteps=1000, original_inference_steps=50
-
 pub struct LcmScheduler {
     /// Precomputed cumulative product of (1 - beta_t)
     pub alphas_cumprod: Vec<f32>,
@@ -86,6 +85,7 @@ impl LcmScheduler {
     }
 
     /// Get alpha_cumprod at timestep t (0 ≤ t < 1000).
+    #[allow(dead_code)]
     pub fn alpha_cumprod(&self, t: usize) -> f32 {
         self.alphas_cumprod[t]
     }
@@ -162,5 +162,39 @@ impl LcmScheduler {
 impl Default for LcmScheduler {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+
+    #[test]
+    fn set_timesteps_count_matches_steps() {
+        let mut scheduler = LcmScheduler::new();
+        scheduler.set_timesteps(10);
+        assert_eq!(scheduler.num_inference_steps, 10);
+        assert_eq!(scheduler.timesteps.len(), 10);
+    }
+
+    #[test]
+    fn timesteps_are_descending() {
+        let mut scheduler = LcmScheduler::new();
+        scheduler.set_timesteps(8);
+        for window in scheduler.timesteps.windows(2) {
+            assert!(window[0] > window[1]);
+        }
+    }
+
+    #[test]
+    fn step_preserves_latent_shape() {
+        let mut scheduler = LcmScheduler::new();
+        scheduler.set_timesteps(4);
+        let latent = vec![0.5f32; 16];
+        let noise_pred = vec![0.1f32; 16];
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let (prev, _) = scheduler.step(&noise_pred, 999, &latent, 0, &mut rng);
+        assert_eq!(prev.len(), latent.len());
     }
 }

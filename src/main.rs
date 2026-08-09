@@ -1,12 +1,7 @@
-mod mcp;
-mod models;
-mod pipeline;
-mod scheduler;
-mod serve;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use pipeline::{GenerateRequest, Pipeline};
+use lcm_dreamshaper_v7_rknn::pipeline::{GenerateRequest, Pipeline};
+use lcm_dreamshaper_v7_rknn::serve;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLI
@@ -30,11 +25,11 @@ struct Args {
     prompt: String,
 
     /// Number of LCM inference steps (higher = better quality, slower)
-    #[arg(short = 's', long, default_value_t = 10, global = true)]
+    #[arg(short = 's', long, default_value_t = 15, global = true)]
     steps: usize,
 
     /// Guidance scale
-    #[arg(short = 'g', long, default_value_t = 7.5, global = true)]
+    #[arg(short = 'g', long, default_value_t = 8.5, global = true)]
     guidance_scale: f32,
 
     /// Random seed (omit or 0 for a random seed)
@@ -73,7 +68,7 @@ enum Command {
         #[arg(long, default_value = "0.0.0.0")]
         host: String,
         /// Port to bind
-        #[arg(long, default_value_t = 8080)]
+        #[arg(long, default_value_t = 8765)]
         port: u16,
     },
 }
@@ -87,11 +82,14 @@ async fn main() {
     let args = Args::parse();
 
     let result = match &args.command {
-        Some(Command::Serve { host, port }) => {
-            serve::serve(host, *port).await
-        }
+        Some(Command::Serve { host, port }) => serve::serve(host, *port).await,
         Some(Command::Generate {
-            prompt, steps, guidance_scale, seed, output, info_only,
+            prompt,
+            steps,
+            guidance_scale,
+            seed,
+            output,
+            info_only,
         }) => {
             let prompt = prompt.clone().unwrap_or_else(|| args.prompt.clone());
             let steps = steps.unwrap_or(args.steps);
@@ -99,19 +97,22 @@ async fn main() {
             let seed = seed.or(args.seed);
             let output = output.clone().unwrap_or_else(|| args.output.clone());
             let info_only = *info_only || args.info_only;
-            tokio::task::block_in_place(|| run_generate(prompt, steps, guidance_scale, seed, output, info_only))
+            tokio::task::block_in_place(|| {
+                run_generate(prompt, steps, guidance_scale, seed, output, info_only)
+            })
         }
         None => {
-            // No subcommand → generate mode using top-level flags
-            let seed = args.seed.and_then(|s| if s == 0 { None } else { Some(s) });
-            tokio::task::block_in_place(|| run_generate(
-                args.prompt.clone(),
-                args.steps,
-                args.guidance_scale,
-                seed,
-                args.output.clone(),
-                args.info_only,
-            ))
+            let seed = args.seed.filter(|&s| s != 0);
+            tokio::task::block_in_place(|| {
+                run_generate(
+                    args.prompt.clone(),
+                    args.steps,
+                    args.guidance_scale,
+                    seed,
+                    args.output.clone(),
+                    args.info_only,
+                )
+            })
         }
     };
 
@@ -136,11 +137,15 @@ fn run_generate(
         return Ok(());
     }
 
-    let result = pipeline.generate(GenerateRequest { prompt, steps, guidance_scale, seed })?;
+    let result = pipeline.generate(GenerateRequest {
+        prompt,
+        steps,
+        guidance_scale,
+        seed,
+    })?;
 
     std::fs::write(&output, &result.png_bytes)
         .map_err(|e| anyhow::anyhow!("Failed to write {}: {}", output, e))?;
     eprintln!("✅ Saved to: {} (seed={})", output, result.seed);
     Ok(())
 }
-

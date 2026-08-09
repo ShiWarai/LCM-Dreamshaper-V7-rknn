@@ -26,18 +26,18 @@ use crate::pipeline::{GenerateRequest, Pipeline};
 pub struct GenerateImageParams {
     /// Text description of the image to generate
     pub prompt: String,
-    /// Number of LCM denoising steps (1–50, default: 4 for fast preview)
+    /// Number of LCM denoising steps (1–50, default: 15)
     #[serde(default = "default_steps")]
     pub steps: usize,
-    /// Classifier-free guidance scale (default: 7.5)
+    /// Classifier-free guidance scale (default: 8.5)
     #[serde(default = "default_guidance_scale")]
     pub guidance_scale: f32,
     /// Optional fixed seed for reproducibility; omit for random
     pub seed: Option<u64>,
 }
 
-fn default_steps() -> usize { 4 }
-fn default_guidance_scale() -> f32 { 7.5 }
+fn default_steps() -> usize { 15 }
+fn default_guidance_scale() -> f32 { 8.5 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MCP handler
@@ -105,10 +105,10 @@ impl DreamshaperMcp {
         if let Ok(entries) = std::fs::read_dir(dir) {
             let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
             for entry in entries.flatten() {
-                if let Ok(meta) = entry.metadata() {
-                    if meta.modified().map(|t| t < cutoff).unwrap_or(false) {
-                        let _ = std::fs::remove_file(entry.path());
-                    }
+                if let Ok(meta) = entry.metadata()
+                    && meta.modified().map(|t| t < cutoff).unwrap_or(false)
+                {
+                    let _ = std::fs::remove_file(entry.path());
                 }
             }
         }

@@ -1,0 +1,40 @@
+# Before first run:
+# docker network create dreamshaper_default
+#
+# Host path to RKNN models is set in .env: LCM_MODELS_DIR
+
+name: dreamshaper
+
+services:
+  dreamshaper:
+    build: .
+    image: dreamshaper-api:latest
+    platform: linux/arm64
+    container_name: dreamshaper-api
+    privileged: true
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/dma_heap:/dev/dma_heap
+    restart: unless-stopped
+    entrypoint: ["./scripts/docker-entrypoint.sh"]
+    environment:
+      LCM_MODELS_DIR: /models
+      PORT: ${PORT:-8765}
+      HOST: "0.0.0.0"
+      DREAMSHAPER_API_KEY: ${DREAMSHAPER_API_KEY:-}
+    volumes:
+      - ${LCM_MODELS_DIR}:/models
+    ports:
+      - "${PORT:-8765}:${PORT:-8765}"
+    networks:
+      - dreamshaper_default
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:${PORT:-8765}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+
+networks:
+  dreamshaper_default:
+    external: true

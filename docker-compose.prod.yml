@@ -1,0 +1,8 @@
+# Production: pre-built image from GHCR (tag :main).
+# docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:main
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  dreamshaper:
+    image: ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:main
+    build: !override null

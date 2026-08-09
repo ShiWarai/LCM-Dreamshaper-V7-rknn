@@ -1,0 +1,21 @@
+# Dev image for clippy and unit tests (no NPU). Not used in production.
+FROM rust:1-bookworm
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    pkg-config \
+    libssl-dev \
+    clang \
+    libclang-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && rustup component add clippy
+
+COPY Cargo.toml Cargo.lock build.rs ./
+COPY src ./src/
+COPY third_party/librknnrt.so ./third_party/
+
+ENV RKNNRT_LIB_DIR=/app/third_party
+
+CMD ["cargo", "test", "--release", "--", "--nocapture"]

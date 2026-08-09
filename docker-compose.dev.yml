@@ -1,0 +1,15 @@
+# Dev container for clippy and unit tests (no NPU).
+# CI overrides user with --user 0:0. librknnrt.so is aarch64 — run on arm64 host/runner.
+name: dreamshaper-dev
+
+services:
+  dev:
+    image: dreamshaper-dev
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+    working_dir: /app
+    environment:
+      RKNNRT_LIB_DIR: /app/third_party

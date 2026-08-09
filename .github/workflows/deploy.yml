@@ -1,0 +1,157 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+    inputs:
+      publish_prerelease:
+        description: "Build and publish prerelease image to GHCR (tag :prerelease)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+  actions: write
+
+env:
+  IMAGE_NAME: ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn
+
+jobs:
+  test:
+    name: Run tests in Docker
+    # arm64: third_party/librknnrt.so is aarch64 — cannot link on x86_64 runners
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build dev image
+        uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: .
+          file: ./Dockerfile.dev
+          platforms: linux/arm64
+          tags: dreamshaper-dev:latest
+          load: true
+          push: false
+          cache-from: type=gha,scope=lcm-dreamshaper-v7-rknn-dev
+          cache-to: type=gha,mode=max,scope=lcm-dreamshaper-v7-rknn-dev
+
+      - name: Clippy and tests in container
+        run: |
+          set -e
+          rm -rf target
+          docker compose -f docker-compose.dev.yml run --rm -T --user 0:0 dev \
+            sh -c 'cargo clippy --all-targets -- -D warnings && cargo test --lib -- --nocapture'
+
+  publish-prerelease:
+    name: Publish prerelease image to GHCR
+    needs: test
+    if: |
+      needs.test.result == 'success' && (
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_prerelease == 'true') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/dev' && contains(github.event.head_commit.message, '[prerelease]'))
+      )
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push dreamshaper (prerelease)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          tags: |
+            ${{ env.IMAGE_NAME }}:prerelease
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          push: true
+          provenance: false
+          cache-from: type=gha,scope=lcm-dreamshaper-v7-rknn-prerelease
+          cache-to: type=gha,mode=max,scope=lcm-dreamshaper-v7-rknn-prerelease
+
+  notify-telegram:
+    name: Notify Telegram
+    needs: [test, publish-prerelease]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tests failed
+        if: needs.test.result != 'success'
+        uses: appleboy/telegram-action@v1.0.1
+        continue-on-error: true
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          format: markdown
+          message: |
+            *Tests failed*
+            Repository: `${{ github.repository }}`
+            Branch: `${{ github.ref_name }}`
+            [Open run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+      - name: Tests OK, prerelease failed
+        if: needs.test.result == 'success' && needs.publish-prerelease.result == 'failure'
+        uses: appleboy/telegram-action@v1.0.1
+        continue-on-error: true
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          format: markdown
+          message: |
+            *Tests passed, prerelease failed*
+            Repository: `${{ github.repository }}`
+            Branch: `${{ github.ref_name }}`
+            [Open run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+      - name: Tests OK, prerelease published
+        if: needs.test.result == 'success' && needs.publish-prerelease.result == 'success'
+        uses: appleboy/telegram-action@v1.0.1
+        continue-on-error: true
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          format: markdown
+          disable_notification: true
+          message: |
+            *Tests and prerelease succeeded*
+            Repository: `${{ github.repository }}`
+            Branch: `${{ github.ref_name }}`
+            Tags: `:prerelease` and `:${{ github.sha }}`
+            Image: `ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:prerelease`
+            [Open run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+      - name: Tests OK (no prerelease)
+        if: needs.test.result == 'success' && needs.publish-prerelease.result == 'skipped'
+        uses: appleboy/telegram-action@v1.0.1
+        continue-on-error: true
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          format: markdown
+          disable_notification: true
+          message: |
+            *Tests passed*
+            Repository: `${{ github.repository }}`
+            Branch: `${{ github.ref_name }}`
+            [Open run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

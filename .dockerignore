@@ -1,0 +1,10 @@
+.git
+.github
+.venv
+target
+models
+lib
+*.png
+generated
+docs/PLAN-uncensored-rk3588-rknn.md
+.env

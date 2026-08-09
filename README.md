@@ -1,6 +1,6 @@
 <div align="center">
 
-# LCM-Dreamshaper-V7-rs
+# LCM-Dreamshaper-V7-rknn
 
 > Note: The tool automatically attempts to download a recompiled UNet RKNN from the HF repository `kautism/LCM_Dreamshaper_v7-RKNN-2.3.2` if present. If not found, it falls back to the original `whaoyang/LCM-Dreamshaper-V7-ONNX-rk3588-512x512-2.3.0` RKNN. All model downloads are handled by the hf-hub library (no manual caching required).
 
@@ -24,7 +24,7 @@ Supports both a **CLI mode** for one-shot image generation and a **serve mode** 
 ## Features
 
 - 🚀 **RK3588 NPU acceleration** — all three NPU cores engaged for the UNet
-- ⚡ **LCM scheduling** — good-quality images in as few as 4 steps; 10 steps by default
+- ⚡ **LCM scheduling** — good-quality images in as few as 4 steps; 15 steps by default
 - 🖼️ **512 × 512 PNG output**
 - 🌐 **OpenAI-compatible REST API** (`POST /v1/images/generations`)
 - 🤖 **MCP server** (`/mcp`) — expose image generation as an AI tool for GitHub Copilot and other MCP clients
@@ -67,7 +67,7 @@ Installation notes:
 - You do not need to recompile any model to install the runtime; recompilation is only necessary when the precompiled RKNN model is incompatible with your runtime (see "Building the UNet" section).
 - For NPU access also ensure the current user is in the `render` group (or run the tool as root): `sudo usermod -aG render $USER` and re-login.
 
-We intentionally do not ship or auto-install librknnrt.so because installing system libraries requires root and platform-specific handling; please install the runtime yourself following the vendor instructions or the link above.
+We intentionally do not ship or auto-install librknnrt.so in system paths for local dev; the repo includes a copy in `third_party/librknnrt.so` for builds and Docker. For bare-metal installs, place the runtime under `/usr/lib/` and run `ldconfig`, or use the Docker image (runtime is bundled).
 
 ---
 
@@ -116,8 +116,8 @@ cp /tmp/unet_rk3588_v232.rknn ~/.cache/lcm-rs/unet_v232.rknn
 Clone the repository and install the binary into `~/.cargo/bin` with:
 
 ```bash
-git clone https://github.com/darkautism/LCM-Dreamshaper-V7-rs.git
-cd LCM-Dreamshaper-V7-rs
+git clone https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn.git
+cd LCM-Dreamshaper-V7-rknn
 cargo install --path .
 ```
 
@@ -132,33 +132,40 @@ cargo build --release
 
 ---
 
-## Running as a System Service (systemd)
+## Docker (RK3588 / k3s-ready)
 
-A ready-to-use **user-level** systemd service file is included at [`dreamshaper.service`](dreamshaper.service).
-No root required — it runs under your own account and inherits your group memberships (including `render` for NPU access).
+Production image for `linux/arm64` with NPU access. RKNN models are **not** baked into the image — mount them from the host.
 
 ```bash
-# Install the service
-mkdir -p ~/.config/systemd/user
-cp dreamshaper.service ~/.config/systemd/user/
-systemctl --user daemon-reload
+# 1. Network (once)
+docker network create dreamshaper_default
 
-# Enable and start
-systemctl --user enable --now dreamshaper
+# 2. .env — host path to models
+cp .env.example .env
+# LCM_MODELS_DIR=/path/to/your/models
 
-# Check status / logs
-systemctl --user status dreamshaper
-journalctl --user -u dreamshaper -f
+# 3. Local build and run
+docker compose up -d --build
+
+# Health
+curl -fsS http://localhost:8765/health
 ```
 
-> **Auto-start on boot (without login):** run `loginctl enable-linger $USER` once.
-> This lets systemd start your user services at boot even before you log in interactively.
+**Prod from GHCR:**
 
-The service will:
-- Start automatically on boot (after `enable-linger`)
-- Restart on failure (after 5 s)
-- Use `%h/.cargo/bin/dreamshaper-cli` (`%h` = your home directory)
-- Serve on `0.0.0.0:8080` (OpenAI REST + MCP endpoints)
+```bash
+docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:main
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+**Prerelease (`dev` branch, commit with `[prerelease]`):**
+
+```bash
+docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:prerelease
+docker compose -f docker-compose.yml -f docker-compose.prerelease.yml up -d
+```
+
+CI/CD, tags, and Telegram notifications: [`docs/cicd.md`](docs/cicd.md).
 
 ---
 
@@ -173,8 +180,8 @@ Commands:
 
 Options:
   -p, --prompt          Text prompt [default: "a beautiful sunset over the ocean, photorealistic"]
-  -s, --steps           Inference steps [default: 10]
-  -g, --guidance-scale  Guidance scale [default: 7.5]
+  -s, --steps           Inference steps [default: 15]
+  -g, --guidance-scale  Guidance scale [default: 8.5]
       --seed            Random seed (omit for a random seed each run)
   -o, --output          Output PNG path [default: output.png]
       --info-only       Print model tensor info and exit
@@ -213,53 +220,53 @@ The serve mode also exposes a **Model Context Protocol** endpoint at `/mcp`, imp
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `prompt` | string | **required** | Text description of the image |
-| `steps` | integer | `4` | LCM denoising steps |
-| `guidance_scale` | float | `7.5` | Classifier-free guidance scale |
+| `steps` | integer | `15` | LCM denoising steps |
+| `guidance_scale` | float | `8.5` | Classifier-free guidance scale |
 | `seed` | integer\|null | random | Fixed seed for reproducibility |
 
-### GitHub Copilot / VS Code Setup
+### MCP client setup
 
-Add the server to `.vscode/mcp.json` in your workspace (a pre-filled copy is already included in this repo):
+Add the server to `.vscode/mcp.json` in your workspace:
 
 ```json
 {
   "servers": {
     "dreamshaper": {
       "type": "http",
-      "url": "http://localhost:8080/mcp"
+      "url": "http://localhost:8765/mcp"
     }
   }
 }
 ```
 
-Then start the server and reload VS Code. Copilot Chat will detect the `generate_image` tool automatically.
+Then start the server (`dreamshaper-cli serve` or Docker) and reload VS Code. Copilot Chat will detect the `generate_image` tool automatically.
 
 ### Manual MCP curl Workflow
 
 ```bash
 # 1. Initialize session
-SESSION=$(curl -s -D - -X POST http://localhost:8080/mcp \
+SESSION=$(curl -s -D - -X POST http://localhost:8765/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}' \
   | grep -i "mcp-session-id" | awk '{print $2}' | tr -d '\r')
 
 # 2. Complete handshake
-curl -s -X POST http://localhost:8080/mcp \
+curl -s -X POST http://localhost:8765/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "Mcp-Session-Id: $SESSION" \
   -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
 
 # 3. List available tools
-curl -s -X POST http://localhost:8080/mcp \
+curl -s -X POST http://localhost:8765/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "Mcp-Session-Id: $SESSION" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
 # 4. Call generate_image
-curl -s -X POST http://localhost:8080/mcp \
+curl -s -X POST http://localhost:8765/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "Mcp-Session-Id: $SESSION" \
@@ -282,15 +289,30 @@ curl -s -X POST http://localhost:8080/mcp \
 Start the HTTP server:
 
 ```bash
-./dreamshaper-cli serve --host 0.0.0.0 --port 8080
+./dreamshaper-cli serve --host 0.0.0.0 --port 8765
 ```
 
 ### Endpoint
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `GET` | `/health` | Health check (Docker / k8s) — no auth |
 | `POST` | `/v1/images/generations` | Generate image(s) — OpenAI Images API compatible |
 | `POST` / `GET` | `/mcp` | Model Context Protocol (MCP) endpoint |
+
+### Authentication
+
+If **`DREAMSHAPER_API_KEY`** is set (or **`OPENAI_API_KEY`** as an alias), protected endpoints require:
+
+```http
+Authorization: Bearer <your_key>
+```
+
+Multiple keys: comma-separated in `DREAMSHAPER_API_KEY` (`key1,key2`).
+
+Protected: `POST /v1/images/generations`, `/mcp`, `/images/*`. `GET /health` stays open (Docker health checks).
+
+If no key is set, the API is open — fine for an isolated Docker network; do not expose to the internet without a key.
 
 ### Request body
 
@@ -301,8 +323,8 @@ Start the HTTP server:
 | `size` | string | `"512x512"` | Image size (only `"512x512"` supported) |
 | `response_format` | string | `"b64_json"` | Response format (`"b64_json"`) |
 | `seed` | integer\|null | `null` | Seed for reproducibility; omit for random |
-| `steps` | integer | `10` | LCM inference steps (extension field) |
-| `guidance_scale` | float | `7.5` | Guidance scale (extension field) |
+| `steps` | integer | `15` | LCM inference steps (extension field) |
+| `guidance_scale` | float | `8.5` | Guidance scale (extension field) |
 
 ### Response
 
@@ -322,15 +344,16 @@ Start the HTTP server:
 
 **Basic generation (random seed):**
 ```bash
-curl -X POST http://localhost:8080/v1/images/generations \
+curl -X POST http://localhost:8765/v1/images/generations \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${DREAMSHAPER_API_KEY}" \
   -d '{"prompt": "a red panda in a bamboo forest, digital art"}' \
   | jq -r '.data[0].b64_json' | base64 -d > output.png
 ```
 
 **Fixed seed for reproducibility:**
 ```bash
-curl -X POST http://localhost:8080/v1/images/generations \
+curl -X POST http://localhost:8765/v1/images/generations \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "a futuristic city at night, cyberpunk",
@@ -343,7 +366,7 @@ curl -X POST http://localhost:8080/v1/images/generations \
 
 **Fast preview (4 steps):**
 ```bash
-curl -X POST http://localhost:8080/v1/images/generations \
+curl -X POST http://localhost:8765/v1/images/generations \
   -H "Content-Type: application/json" \
   -d '{"prompt": "a mountain lake at sunset", "steps": 4}' \
   | jq -r '.data[0].b64_json' | base64 -d > lake.png
@@ -351,7 +374,7 @@ curl -X POST http://localhost:8080/v1/images/generations \
 
 **Check which seed was used:**
 ```bash
-curl -X POST http://localhost:8080/v1/images/generations \
+curl -X POST http://localhost:8765/v1/images/generations \
   -H "Content-Type: application/json" \
   -d '{"prompt": "a dragon"}' \
   | jq '{seed: .data[0].seed}'
@@ -373,16 +396,25 @@ Measured on RK3588 (Orange Pi 5 Plus), all 3 NPU cores:
 ## Project Structure
 
 ```
-LCM-Dreamshaper-V7-rs/
+LCM-Dreamshaper-V7-rknn/
+├── .github/workflows/     # CI: test, GHCR publish, Telegram
+├── Dockerfile             # Prod image (linux/arm64)
+├── Dockerfile.dev         # Dev image (clippy + tests)
+├── docker-compose.yml     # Local / base compose
+├── scripts/
+│   └── docker-entrypoint.sh
+├── third_party/
+│   └── librknnrt.so       # RKNN runtime 2.3.2 (for build & Docker)
 ├── src/
-│   ├── main.rs        # CLI entry point + subcommands
-│   ├── pipeline.rs    # Shared generation pipeline (model loading, inference)
-│   ├── serve.rs       # HTTP server (OpenAI REST + MCP endpoint)
-│   ├── mcp.rs         # MCP handler — generate_image tool
-│   ├── models.rs      # RKNN model wrappers (text encoder, UNet, VAE)
-│   └── scheduler.rs   # LCM noise scheduler
-├── .vscode/
-│   └── mcp.json       # VS Code / GitHub Copilot MCP configuration
+│   ├── lib.rs             # Library crate
+│   ├── main.rs            # CLI entry point
+│   ├── pipeline.rs        # Generation pipeline
+│   ├── serve.rs           # HTTP server (OpenAI REST + MCP + /health)
+│   ├── mcp.rs             # MCP generate_image tool
+│   ├── models.rs          # RKNN model wrappers
+│   └── scheduler.rs       # LCM noise scheduler
+├── docs/
+│   └── cicd.md
 └── Cargo.toml
 ```
 
@@ -405,16 +437,16 @@ If this saves you time or helps your project, consider supporting continued deve
 
 <!-- Link Definitions -->
 
-[github-stars-shield]: https://img.shields.io/github/stars/darkautism/LCM-Dreamshaper-V7-rs?labelColor=black&style=flat-square&color=ffcb47
-[github-stars-link]: https://github.com/darkautism/LCM-Dreamshaper-V7-rs
-[github-issues-shield]: https://img.shields.io/github/issues/darkautism/LCM-Dreamshaper-V7-rs?labelColor=black&style=flat-square&color=ff80eb
-[github-issues-link]: https://github.com/darkautism/LCM-Dreamshaper-V7-rs/issues
-[github-contributors-shield]: https://img.shields.io/github/contributors/darkautism/LCM-Dreamshaper-V7-rs?color=c4f042&labelColor=black&style=flat-square
-[github-contributors-link]: https://github.com/darkautism/LCM-Dreamshaper-V7-rs/graphs/contributors
-[last-commit-shield]: https://img.shields.io/github/last-commit/darkautism/LCM-Dreamshaper-V7-rs?color=c4f042&labelColor=black&style=flat-square
-[last-commit-link]: https://github.com/darkautism/LCM-Dreamshaper-V7-rs/commits/main
+[github-stars-shield]: https://img.shields.io/github/stars/ShiWarai/LCM-Dreamshaper-V7-rknn?labelColor=black&style=flat-square&color=ffcb47
+[github-stars-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn
+[github-issues-shield]: https://img.shields.io/github/issues/ShiWarai/LCM-Dreamshaper-V7-rknn?labelColor=black&style=flat-square&color=ff80eb
+[github-issues-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/issues
+[github-contributors-shield]: https://img.shields.io/github/contributors/ShiWarai/LCM-Dreamshaper-V7-rknn?color=c4f042&labelColor=black&style=flat-square
+[github-contributors-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/graphs/contributors
+[last-commit-shield]: https://img.shields.io/github/last-commit/ShiWarai/LCM-Dreamshaper-V7-rknn?color=c4f042&labelColor=black&style=flat-square
+[last-commit-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/commits/main
 [license-shield]: https://img.shields.io/badge/license-MIT-white?labelColor=black&style=flat-square
-[license-link]: https://github.com/darkautism/LCM-Dreamshaper-V7-rs/blob/main/LICENSE
+[license-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/blob/main/LICENSE
 [ko-fi-shield]: https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white
 [ko-fi-link]: https://ko-fi.com/kautism
 [paypal-shield]: https://img.shields.io/badge/PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white

@@ -4,10 +4,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Request, State},
     http::{HeaderValue, StatusCode, header::ACCEPT},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{any, post},
+    routing::{any, get, post},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rmcp::transport::{
@@ -26,6 +27,7 @@ use crate::pipeline::{GenerateRequest, Pipeline};
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ImageGenRequest {
     pub prompt: String,
     /// Number of images (only 1 supported; others ignored)
@@ -39,10 +41,10 @@ pub struct ImageGenRequest {
     pub response_format: String,
     /// Optional seed; omit or set null for a random seed
     pub seed: Option<u64>,
-    /// Number of LCM inference steps (default 10)
+    /// Number of LCM inference steps (default 15)
     #[serde(default = "default_steps")]
     pub steps: usize,
-    /// Guidance scale (default 7.5)
+    /// Guidance scale (default 8.5)
     #[serde(default = "default_guidance_scale")]
     pub guidance_scale: f32,
 }
@@ -50,8 +52,8 @@ pub struct ImageGenRequest {
 fn default_n() -> u32 { 1 }
 fn default_size() -> String { "512x512".to_string() }
 fn default_response_format() -> String { "b64_json".to_string() }
-fn default_steps() -> usize { 10 }
-fn default_guidance_scale() -> f32 { 7.5 }
+fn default_steps() -> usize { 15 }
+fn default_guidance_scale() -> f32 { 8.5 }
 
 #[derive(Debug, Serialize)]
 pub struct ImageData {
@@ -75,6 +77,118 @@ pub struct ErrorDetail {
 #[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: ErrorDetail,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API key auth (OpenAI-compatible Bearer token)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// When set, `POST /v1/images/generations`, `/mcp`, and `/images/*` require
+/// `Authorization: Bearer <key>`. `/health` stays open for Docker health checks.
+#[derive(Clone)]
+struct ApiKeyAuth {
+    keys: Vec<String>,
+}
+
+impl ApiKeyAuth {
+    fn from_env() -> Self {
+        let raw = std::env::var("DREAMSHAPER_API_KEY")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| {
+                std::env::var("OPENAI_API_KEY")
+                    .ok()
+                    .filter(|s| !s.trim().is_empty())
+            });
+        let keys = raw.map(|s| parse_api_keys(&s)).unwrap_or_default();
+        Self { keys }
+    }
+
+    fn is_required(&self) -> bool {
+        !self.keys.is_empty()
+    }
+}
+
+fn parse_api_keys(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn extract_bearer_token(authorization: &str) -> Option<&str> {
+    let (scheme, token) = authorization.split_once(' ')?;
+    if scheme.eq_ignore_ascii_case("bearer") && !token.trim().is_empty() {
+        Some(token.trim())
+    } else {
+        None
+    }
+}
+
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.bytes()
+        .zip(b.bytes())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
+}
+
+fn unauthorized_response(message: &str) -> Response {
+    let resp = ErrorResponse {
+        error: ErrorDetail {
+            message: message.to_string(),
+            r#type: "invalid_request_error".to_string(),
+            code: Some("invalid_api_key".to_string()),
+        },
+    };
+    (StatusCode::UNAUTHORIZED, Json(serde_json::to_value(resp).unwrap())).into_response()
+}
+
+async fn require_api_key(
+    State(auth): State<ApiKeyAuth>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if !auth.is_required() {
+        return next.run(request).await;
+    }
+
+    let authorization = request
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+
+    let token = authorization.and_then(extract_bearer_token);
+    let authorized = token.is_some_and(|t| {
+        auth.keys.iter().any(|key| constant_time_eq(t, key))
+    });
+
+    if authorized {
+        next.run(request).await
+    } else if token.is_some() {
+        unauthorized_response("Incorrect API key provided: your_key")
+    } else {
+        unauthorized_response(
+            "You didn't provide an API key. You need to provide your API key in an \
+             Authorization header using Bearer auth (i.e. Authorization: Bearer YOUR_KEY).",
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Health
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+}
+
+async fn health() -> impl IntoResponse {
+    Json(HealthResponse { status: "ok" })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -161,10 +275,9 @@ async fn mcp_handler(
     // the client actually connected through (LAN, Tailscale, localhost, etc.)
     if let Some(host) = req.headers().get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())
+        && let Ok(mut base) = state.base_url.lock()
     {
-        if let Ok(mut base) = state.base_url.lock() {
-            *base = format!("http://{}", host);
-        }
+        *base = format!("http://{}", host);
     }
 
     // Inject Accept header so clients that omit text/event-stream still work
@@ -213,10 +326,10 @@ pub async fn serve(host: &str, port: u16) -> Result<()> {
 
     let mcp_state = McpState { service: mcp_service, base_url };
 
-    // Build a two-state router: pipeline for OpenAI REST, mcp_service for MCP.
-    // The mcp_handler injects the Accept header shim so clients that omit
-    // text/event-stream (e.g. VS Code Copilot) are handled transparently.
-    let app = Router::new()
+    let auth = ApiKeyAuth::from_env();
+
+    // Protected routes: OpenAI REST, MCP, and generated image files.
+    let protected = Router::new()
         .route("/v1/images/generations", post(generate_images))
         .with_state(shared)
         .merge(
@@ -226,15 +339,77 @@ pub async fn serve(host: &str, port: u16) -> Result<()> {
                 .with_state(mcp_state)
         )
         .nest_service("/images", ServeDir::new(image_dir))
+        .route_layer(middleware::from_fn_with_state(auth.clone(), require_api_key));
+
+    let app = Router::new()
+        .route("/health", get(health))
+        .merge(protected)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http());
 
     let addr = format!("{}:{}", host, port);
+    if auth.is_required() {
+        eprintln!("api auth: enabled (Bearer DREAMSHAPER_API_KEY / OPENAI_API_KEY)");
+    } else {
+        eprintln!("api auth: disabled (set DREAMSHAPER_API_KEY to require Authorization header)");
+    }
     eprintln!("🚀 Serving on http://{}/v1/images/generations  (OpenAI API)", addr);
+    eprintln!("💚 Health:        http://{}/health", addr);
     eprintln!("🤖 MCP endpoint:  http://{}/mcp  (Model Context Protocol)", addr);
     eprintln!("🖼️  Images:        http://{}/images/<seed>.png", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_api_keys_splits_and_trims() {
+        assert_eq!(
+            parse_api_keys("key1, key2 ,key3"),
+            vec!["key1", "key2", "key3"]
+        );
+        assert_eq!(parse_api_keys("  only  "), vec!["only"]);
+        assert!(parse_api_keys("").is_empty());
+        assert!(parse_api_keys(", , ").is_empty());
+    }
+
+    #[test]
+    fn extract_bearer_token_parses_header() {
+        assert_eq!(
+            extract_bearer_token("Bearer sk-test"),
+            Some("sk-test")
+        );
+        assert_eq!(
+            extract_bearer_token("bearer sk-test"),
+            Some("sk-test")
+        );
+        assert_eq!(extract_bearer_token("Basic abc"), None);
+        assert_eq!(extract_bearer_token("Bearer"), None);
+        assert_eq!(extract_bearer_token(""), None);
+    }
+
+    #[test]
+    fn constant_time_eq_matches_equal_strings() {
+        assert!(constant_time_eq("sk-secret", "sk-secret"));
+        assert!(!constant_time_eq("sk-secret", "sk-wrong"));
+        assert!(!constant_time_eq("short", "longer"));
+    }
+
+    #[test]
+    fn api_key_auth_accepts_any_configured_key() {
+        let auth = ApiKeyAuth {
+            keys: vec!["alpha".to_string(), "beta".to_string()],
+        };
+        assert!(auth.is_required());
+        assert!(
+            auth.keys
+                .iter()
+                .any(|key| constant_time_eq("beta", key))
+        );
+    }
 }

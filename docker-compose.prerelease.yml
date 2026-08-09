@@ -1,0 +1,10 @@
+# Staging: pre-built image from GHCR (tag :prerelease).
+# docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:prerelease
+# docker compose -f docker-compose.yml -f docker-compose.prerelease.yml up -d
+#
+# Built from dev ([prerelease] in commit or manual workflow).
+
+services:
+  dreamshaper:
+    image: ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:prerelease
+    build: !override null
