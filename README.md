@@ -154,7 +154,7 @@ curl -fsS http://localhost:8765/health
 **Prod from GHCR:**
 
 ```bash
-docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:main
+docker pull ghcr.io/shiwarai/lcm-dreamshaper-v7-rknn:master
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
@@ -444,9 +444,9 @@ If this saves you time or helps your project, consider supporting continued deve
 [github-contributors-shield]: https://img.shields.io/github/contributors/ShiWarai/LCM-Dreamshaper-V7-rknn?color=c4f042&labelColor=black&style=flat-square
 [github-contributors-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/graphs/contributors
 [last-commit-shield]: https://img.shields.io/github/last-commit/ShiWarai/LCM-Dreamshaper-V7-rknn?color=c4f042&labelColor=black&style=flat-square
-[last-commit-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/commits/main
+[last-commit-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/commits/master
 [license-shield]: https://img.shields.io/badge/license-MIT-white?labelColor=black&style=flat-square
-[license-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/blob/main/LICENSE
+[license-link]: https://github.com/ShiWarai/LCM-Dreamshaper-V7-rknn/blob/master/LICENSE
 [ko-fi-shield]: https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white
 [ko-fi-link]: https://ko-fi.com/kautism
 [paypal-shield]: https://img.shields.io/badge/PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white
