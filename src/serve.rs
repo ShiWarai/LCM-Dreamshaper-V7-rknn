@@ -15,6 +15,7 @@ use rmcp::transport::{
     StreamableHttpServerConfig,
     streamable_http_server::{session::local::LocalSessionManager, tower::StreamableHttpService},
 };
+use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
 use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 
@@ -36,7 +37,7 @@ pub struct ImageGenRequest {
     /// Only "512x512" is supported
     #[serde(default = "default_size")]
     pub size: String,
-    /// "b64_json" (default) or "url" (not supported; falls back to b64_json)
+    /// Ignored for output shape: both `url` (data-URI) and `b64_json` are always returned.
     #[serde(default = "default_response_format")]
     pub response_format: String,
     /// Optional seed; omit or set null for a random seed
@@ -55,9 +56,20 @@ fn default_response_format() -> String { "b64_json".to_string() }
 fn default_steps() -> usize { 15 }
 fn default_guidance_scale() -> f32 { 8.5 }
 
+fn serialize_u64_as_str<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&value.to_string())
+}
+
 #[derive(Debug, Serialize)]
 pub struct ImageData {
-    pub b64_json: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub b64_json: Option<String>,
+    #[serde(serialize_with = "serialize_u64_as_str")]
     pub seed: u64,
 }
 
@@ -215,13 +227,18 @@ async fn generate_images(
     match result {
         Ok(Ok(result)) => {
             let b64 = BASE64.encode(&result.png_bytes);
+            let data_url = format!("data:image/png;base64,{b64}");
             let created = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
             let resp = ImageGenResponse {
                 created,
-                data: vec![ImageData { b64_json: b64, seed: result.seed }],
+                data: vec![ImageData {
+                    url: Some(data_url),
+                    b64_json: Some(b64),
+                    seed: result.seed,
+                }],
             };
             (StatusCode::OK, Json(serde_json::to_value(resp).unwrap())).into_response()
         }
